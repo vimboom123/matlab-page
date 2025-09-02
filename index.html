@@ -15,15 +15,8 @@
         .container {
             max-width: 1000px;
         }
-        /* 替换 Tailwind @apply，确保无需构建即可生效 */
         .icon-btn {
-            padding: 0.25rem; /* p-1 */
-            border-radius: 9999px; /* rounded-full */
-            transition-property: background-color, color; /* transition-colors */
-            transition-duration: 200ms; /* duration-200 */
-        }
-        .icon-btn:hover {
-            background-color: #e5e7eb; /* hover:bg-gray-200 */
+            @apply p-1 rounded-full hover:bg-gray-200 transition-colors duration-200;
         }
         .sort-icon {
             opacity: 0.3;
@@ -32,10 +25,6 @@
         .sort-icon.active {
             opacity: 1;
         }
-    </style>
-    <style>
-        /* 让 body 背景也兼容不依赖 Tailwind 的类 */
-        .bg-gray-100 { background-color: #f3f4f6; }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen p-4 sm:p-8 flex items-start justify-center">
@@ -617,4 +606,3 @@
 
 </body>
 </html>
-
