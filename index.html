@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>机器人物料清单</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .container {
+            max-width: 1000px;
+        }
+        /* 替换 Tailwind @apply，确保无需构建即可生效 */
+        .icon-btn {
+            padding: 0.25rem; /* p-1 */
+            border-radius: 9999px; /* rounded-full */
+            transition-property: background-color, color; /* transition-colors */
+            transition-duration: 200ms; /* duration-200 */
+        }
+        .icon-btn:hover {
+            background-color: #e5e7eb; /* hover:bg-gray-200 */
+        }
+        .sort-icon {
+            opacity: 0.3;
+            transition: opacity 0.2s ease-in-out;
+        }
+        .sort-icon.active {
+            opacity: 1;
+        }
+    </style>
+    <style>
+        /* 让 body 背景也兼容不依赖 Tailwind 的类 */
+        .bg-gray-100 { background-color: #f3f4f6; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-4 sm:p-8 flex items-start justify-center">
+
+<div id="app" class="bg-white shadow-xl rounded-2xl p-6 sm:p-10 w-full container">
+    <div class="flex flex-col sm:flex-row items-center justify-between mb-6 space-y-4 sm:space-y-0">
+        <h1 class="text-3xl sm:text-4xl font-extrabold text-gray-800 text-center sm:text-left">机器人物料清单</h1>
+        <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
+            <div class="relative inline-block text-left">
+                <button id="export-btn" class="bg-purple-500 text-white font-bold py-2 px-4 rounded-full shadow-lg hover:bg-purple-600 transition-colors duration-200" onclick="exportExcel()">
+                    导出为 Excel
+                </button>
+            </div>
+            <button class="bg-green-500 text-white font-bold py-2 px-4 rounded-full shadow-lg hover:bg-green-600 transition-colors duration-200" onclick="showAddModal()">
+                + 添加新项目
+            </button>
+        </div>
+    </div>
+    
+    <div id="bom-list-container" class="overflow-x-auto">
+        <table class="min-w-full bg-white rounded-lg overflow-hidden shadow">
+            <thead class="bg-gray-50 border-b border-gray-200">
+                <tr>
+                    <th class="py-3 px-4 sm:px-6 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        <div class="flex items-center space-x-1 cursor-pointer" onclick="sortTable('originalIndex')">
+                            <span>序号</span>
+                            <div class="flex flex-col">
+                                <svg class="h-3 w-3 text-gray-500 sort-icon ascending" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" />
+                                </svg>
+                                <svg class="h-3 w-3 text-gray-500 sort-icon descending" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                </svg>
+                            </div>
+                        </div>
+                    </th>
+                    <th class="py-3 px-4 sm:px-6 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">商品名称</th>
+                    <th class="py-3 px-4 sm:px-6 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">关键参数</th>
+                    <th class="py-3 px-4 sm:px-6 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        <div class="flex items-center space-x-1 cursor-pointer" onclick="sortTable('unitPrice')">
+                            <span>单价</span>
+                            <div class="flex flex-col">
+                                <svg class="h-3 w-3 text-gray-500 sort-icon ascending" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" />
+                                </svg>
+                                <svg class="h-3 w-3 text-gray-500 sort-icon descending" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                </svg>
+                            </div>
+                        </div>
+                    </th>
+                    <th class="py-3 px-4 sm:px-6 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        <div class="flex items-center space-x-1 cursor-pointer" onclick="sortTable('quantity')">
+                            <span>数量</span>
+                            <div class="flex flex-col">
+                                <svg class="h-3 w-3 text-gray-500 sort-icon ascending" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" />
+                                </svg>
+                                <svg class="h-3 w-3 text-gray-500 sort-icon descending" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                </svg>
+                            </div>
+                        </div>
+                    </th>
+                    <th class="py-3 px-4 sm:px-6 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        <div class="flex items-center space-x-1 cursor-pointer" onclick="sortTable('totalPrice')">
+                            <span>总价</span>
+                            <div class="flex flex-col">
+                                <svg class="h-3 w-3 text-gray-500 sort-icon ascending" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" />
+                                </svg>
+                                <svg class="h-3 w-3 text-gray-500 sort-icon descending" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                </svg>
+                            </div>
+                        </div>
+                    </th>
+                    <th class="py-3 px-4 sm:px-6 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">购买链接</th>
+                    <th class="py-3 px-4 sm:px-6 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">操作</th>
+                </tr>
+            </thead>
+            <tbody id="bom-body" class="divide-y divide-gray-200">
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Edit/Add Modal -->
+    <div id="edit-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg">
+            <h2 id="modal-title" class="text-2xl font-bold mb-4"></h2>
+            <form id="edit-form">
+                <div class="mb-4">
+                    <label for="edit-name" class="block text-gray-700 font-semibold mb-2">商品名称</label>
+                    <input type="text" id="edit-name" class="w-full p-2 border rounded-lg">
+                </div>
+                <div class="mb-4">
+                    <label for="edit-parameters" class="block text-gray-700 font-semibold mb-2">关键参数</label>
+                    <textarea id="edit-parameters" class="w-full p-2 border rounded-lg" rows="3"></textarea>
+                </div>
+                <div class="mb-4">
+                    <label for="edit-unit-price" class="block text-gray-700 font-semibold mb-2">单价</label>
+                    <input type="number" id="edit-unit-price" class="w-full p-2 border rounded-lg" step="0.01">
+                </div>
+                <div class="mb-4">
+                    <label for="edit-quantity" class="block text-gray-700 font-semibold mb-2">数量</label>
+                    <input type="number" id="edit-quantity" class="w-full p-2 border rounded-lg" step="1">
+                </div>
+                <div class="mb-4">
+                    <label for="edit-link" class="block text-gray-700 font-semibold mb-2">购买链接</label>
+                    <input type="text" id="edit-link" class="w-full p-2 border rounded-lg">
+                </div>
+                <div class="flex justify-end gap-4">
+                    <button type="button" id="cancel-edit-btn" class="bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded-full hover:bg-gray-400">取消</button>
+                    <button type="submit" class="bg-blue-500 text-white font-bold py-2 px-4 rounded-full hover:bg-blue-600">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirm-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm text-center">
+            <h2 class="text-xl font-bold mb-4">确定删除？</h2>
+            <p id="confirm-message" class="mb-6 text-gray-700">您确定要删除此项目吗？此操作无法撤销。</p>
+            <div class="flex justify-center gap-4">
+                <button type="button" id="cancel-delete-btn" class="bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded-full hover:bg-gray-400">取消</button>
+                <button type="button" id="confirm-delete-btn" class="bg-red-500 text-white font-bold py-2 px-4 rounded-full hover:bg-red-600">确定</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mt-8 text-center text-sm text-gray-500">
+        <p>该清单将随您提供的新商品信息而更新。</p>
+    </div>
+</div>
+
+<script>
+    // 初始物料数据
+    const bomItems = [
+        
+        {
+            name: "Hailo-8 AI 处理器模块",
+            parameters: "算力 26TOPS，接口 M.2、miniPCIe，功耗 ≤5W",
+            quantity: 1,
+            unitPrice: 1325.00,
+            link: "https://item.taobao.com/item.htm?id=743443740434"
+        },
+        {
+            name: "定制三通线",
+            parameters: "2个M8P母弯头，引出电源（1棕:24V, 2绿:地线），485A（5橙），485B（6蓝）",
+            quantity: 2,
+            unitPrice: 100.00,
+            link: "https://trade.taobao.com/trade/detail/trade_snap.htm?trade_id=2878025269213317399&item_num_id=783025934325"
+        },
+        {
+            name: "智元灵犀X1 OmniPicker 通用夹爪",
+            parameters: "产品重量 0.43kg，最大夹持力 30N，最大推荐负载 1.5kg，最大行程 120mm，打开/闭合时间 0.7s，重复定位精度 ±0.05mm，通信协议 CAN/CANFD/RS485/串口，额定工作电压 24V DC",
+            quantity: 1,
+            unitPrice: 1963.00,
+            link: "https://item.taobao.com/item.htm?id=919659759309"
+        },
+        {
+            name: "超声波传感器 FD07-3",
+            parameters: "产品型号：FD07-3；工作电压：3.3V-24V；量程：3-300cm；输出方式：RS485",
+            quantity: 2,
+            unitPrice: 55.00,
+            link: "https://item.taobao.com/item.htm?id=732203294160&pisk=g5azGcmPzaQyq19fP-3egW5P9Yg-q2W1KyMItWVnNYDlvb_H8WPiO_Bdwol3d-Cdw4NnLJyjHeGC29LU38NgV0wQVvcnn-VWPv_-YJP_BJTCyuGH8-NKxJaU9el3tJC-d_Ibw73K-O618NN8wRTjhYUrtEA0MfTk-iik4ZP5GO615wSki2WPCJGMkAwm_f0nZDxonslI_3Y3YKDY0ixhKtLcHrsPmHxvoZeYkiqcI1Q0HrYmmmXhKtQDnqnVmHX0nt223islEnv0n-JVmhTe8pdGiqsPIrO1NipaxI7D2-FJta0xb3HTw7LcEqAmmoecbuborI74a11z-iraqfmOCXqVTc8cq7ZtoSSr3Ql2dfn3ztu2K08Bv0xZ0yWDn4BY_g5Pujq4CtCn4nXoi-mRH-Su-LJzoSNvqMoV7xzeyTec8PPiEBm5HJDg05cqgUBCTi4c3pcUCBUHut5UTfV7XqVV4xRrF4ApKiwjQJuJHY0cxgA1VgxlTikH5kexWvHnmjjk1wDxpv0cxgA1VgHKK2FcqC_nh.&spm=tbpc.boughtlist.suborder_itemtitle.1.107f2e8dbwBTsc&sku_properties=1627207%3A28341"
+        },
+        {
+            name: "684个发黑平垫圈片",
+            parameters: "<span class='text-xs'>M2: 120片, M2.5: 120片, M3: 120片, M4: 120片, M5: 70片, M6: 50片, M8: 50片, M10: 22片, M12: 12片</span>",
+            quantity: 1,
+            unitPrice: 24.80,
+            link: "https://item.taobao.com/item.htm?id=624749361663"
+        },
+        {
+            name: "三角片角钢配件",
+            parameters: "<span class='text-xs'>品牌: 统一佳, 型号: M6, 货架类型: 中型, 形状: 直角形, 特点: 可拆卸、增加稳定性, 附加功能: 拆装, 金属材质: 铁, 安装方式: 螺栓固定</span>",
+            quantity: 1,
+            unitPrice: 3.41,
+            link: "https://item.taobao.com/item.htm?id=743885080989"
+        },
+        {
+            name: "304不锈钢六角螺母",
+            parameters: "型号：M5，牙距：0.8mm，适用扳手：8mm，数量：100颗",
+            quantity: 1,
+            unitPrice: 4.80,
+            link: "https://detail.tmall.com/item.htm?id=549640610734"
+        },
+        {
+            name: "不锈钢角码",
+            parameters: "20号 50*100, 黑色",
+            quantity: 4,
+            unitPrice: 1.65,
+            link: "https://item.taobao.com/item.htm?id=613987373105"
+        },
+        {
+            name: "力特（Z-TEK） RS232转接线柱",
+            parameters: "DP9母转6PIN端子台-适RS485/422 ZY270",
+            quantity: 3,
+            unitPrice: 10.80,
+            link: "https://detail.tmall.com/item.htm?id=726787083449"
+        },
+        {
+            name: "力特（Z-TEK） USB转RS485/422串口线",
+            parameters: "1m; USB转RS485/422-力特定制芯片",
+            quantity: 1,
+            unitPrice: 49.50,
+            link: "https://detail.tmall.com/item.htm?id=724150612107"
+        },
+        {
+            name: "小湃三目智能摄像头",
+            parameters: "型号：P12；存储类型：SD卡；供网方式：无线(WiFi)；清晰度：4MP",
+            quantity: 1,
+            unitPrice: 233.36,
+            link: "https://detail.tmall.com/item.htm?id=765799068907"
+        },
+        {
+            name: "聚徽10.1寸电容触摸一体机",
+            parameters: "品牌: 聚徽, 型号: JH-12150SHLB101-ZNN, 系统配置: windows 10 酷睿i7-7代8G+256G, 接口: 2*USB2.0, 2*USB3.0, 2*LAN, 6*COM(4*RS232, 2*RS485); 微信: wxid_ja3wweweattn22",
+            quantity: 1,
+            unitPrice: 2150.00,
+            link: "https://detail.tmall.com/item.htm?abbucket=13&id=822105103218&mi_id=0000A0UqcC0fK9Z40IUdokO2hA2UB8-DiQO3xbtbNrc_0OI&ns=1&priceTId=2100c82a17568176096533113e0954&skuId=5535279589122&spm=a21n57.1.hoverItem.1&utparam=%7B%22aplus_abtest%22%3A%22defbc44b06287f2977a0b3beb409bd05%22%7D&xxc=taobaoSearch"
+        },
+        {
+            name: "锐曼 月轮骑士2.0-机器人底盘",
+            parameters: "品牌: 锐曼, 尺寸: 500x500x310 mm, 重量: 34 kg, 系统: Android 5.1/Linux, 处理器: RK3128/Intel Core i5-1235U, 存储: 8GB NAND FLASH/32GB SSD; 微信: DAVIDZ7777777",
+            quantity: 1,
+            unitPrice: 17500.00,
+            link: "无公开购买链接（采购合同）"
+        },
+        {
+            name: "锐曼 月轮骑士25AH电池",
+            parameters: "品牌: 锐曼, 电池类型: 磷酸铁锂, 容量: 25AH-8S1P (640 Wh, 25.6V)",
+            quantity: 1,
+            unitPrice: 1500.00,
+            link: "无公开购买链接（采购合同）"
+        },
+        {
+            name: "乐白 LM3 协作机器人",
+            parameters: "品牌: 乐白, 自由度: 6轴, 臂展: 638 mm, 额定负载: 3 kg, 重复定位精度: ±0.5 mm, 本体重量: 9.5 kg; 微信: hclzxy",
+            quantity: 2,
+            unitPrice: 18000.00,
+            link: "https://item.taobao.com/item.htm?id=815041418495"
+        },
+        {
+            name: "乐白 LMG-90 夹爪",
+            parameters: "品牌: 乐白, 型号: LMG-90, 夹持行程: 0~90 mm, 夹持力: 10~35 N, 供电电压: 24V DC, 通讯接口: RS-485",
+            quantity: 2,
+            unitPrice: 2000.00,
+            link: "https://item.taobao.com/item.htm?id=684954797553"
+        },
+        {
+            name: "轧带",
+            parameters: "白色，宽9毫米，长1米，40条，可重复使用",
+            quantity: 1,
+            unitPrice: 20.90,
+            link: "https://item.taobao.com/item.htm?id=730018037391"
+        },
+        {
+            name: "致业万能角铁三角片",
+            parameters: "单片一片",
+            quantity: 4,
+            unitPrice: 1.00,
+            link: "无美团链接"
+        },
+        {
+            name: "镀锌平垫",
+            parameters: "规格: M6, 单价: ¥0.3, 数量: 8",
+            quantity: 1,
+            unitPrice: 2.40,
+            link: "无美团链接"
+        },
+        {
+            name: "M6六角螺丝（规格50）",
+            parameters: "规格: 50, 单价: ¥1.5, 数量: 8",
+            quantity: 1,
+            unitPrice: 12.00,
+            link: "无美团链接"
+        },
+        {
+            name: "镀锌六角螺丝螺母",
+            parameters: "规格: M6, 单价: ¥0.4, 数量: 10",
+            quantity: 1,
+            unitPrice: 4.00,
+            link: "无美团链接"
+        },
+        {
+            name: "M6六角螺丝（规格20）",
+            parameters: "规格: 20, 单价: ¥1, 数量: 2",
+            quantity: 1,
+            unitPrice: 2.00,
+            link: "无美团链接"
+        },
+        {
+            name: "铁角码90度连接件（7x7cm）",
+            parameters: "T型角码一片7x7cm",
+            quantity: 4,
+            unitPrice: 1.80,
+            link: "无美团链接"
+        },
+        {
+            name: "铁角码90度连接件（9x9cm）",
+            parameters: "T型角码一片9x9cm",
+            quantity: 4,
+            unitPrice: 2.00,
+            link: "无美团链接"
+        },
+        {
+            name: "线手套",
+            parameters: "50克",
+            quantity: 2,
+            unitPrice: 2.00,
+            link: "无美团链接"
+        },
+        {
+            name: "超小垫圈镀锌小平垫",
+            parameters: "20个6厘平垫",
+            quantity: 1,
+            unitPrice: 3.00,
+            link: "无美团链接"
+        },
+        {
+            name: "外六角拉爆螺丝",
+            parameters: "内膨胀螺丝10厘80mm长1个",
+            quantity: 8,
+            unitPrice: 1.20,
+            link: "无美团链接"
+        }
+    ];
+    
+    let currentSortKey = null;
+    let isAscending = true;
+    let isAdding = false;
+    let currentEditIndex = null;
+    let confirmDeleteBtn = null;
+    let cancelDeleteBtn = null;
+    let editForm = null;
+    let editModal = null;
+    let modalTitle = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const bomBody = document.getElementById('bom-body');
+        editModal = document.getElementById('edit-modal');
+        editForm = document.getElementById('edit-form');
+        const cancelEditBtn = document.getElementById('cancel-edit-btn');
+        const confirmModal = document.getElementById('confirm-modal');
+        cancelDeleteBtn = document.getElementById('cancel-delete-btn');
+        confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+        modalTitle = document.getElementById('modal-title');
+        
+        // 渲染物料清单
+        function renderBomList() {
+            bomBody.innerHTML = '';
+            let totalOverallPrice = 0;
+            
+            // 计算总价并排序
+            const sortedItems = [...bomItems].map((item, index) => ({
+                ...item,
+                totalPrice: typeof item.unitPrice === 'number' ? item.quantity * item.unitPrice : null,
+                originalIndex: index
+            }));
+
+            if (currentSortKey) {
+                sortedItems.sort((a, b) => {
+                    const aValue = a[currentSortKey];
+                    const bValue = b[currentSortKey];
+
+                    if (aValue === null) return 1;
+                    if (bValue === null) return -1;
+                    if (aValue === bValue) return 0;
+
+                    return isAscending ? (aValue - bValue) : (bValue - aValue);
+                });
+            }
+            
+            sortedItems.forEach((item, index) => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50 transition-colors duration-200';
+                
+                if (typeof item.totalPrice === 'number') {
+                    totalOverallPrice += item.totalPrice;
+                }
+
+                row.innerHTML = `
+                    <td class="py-3 px-4 sm:px-6 text-sm text-gray-900">${item.originalIndex + 1}</td>
+                    <td class="py-3 px-4 sm:px-6 text-sm text-gray-900 font-medium">${item.name}</td>
+                    <td class="py-3 px-4 sm:px-6 text-sm text-gray-500 break-words">${item.parameters}</td>
+                    <td class="py-3 px-4 sm:px-6 text-sm font-bold text-gray-900">¥${typeof item.unitPrice === 'number' ? item.unitPrice.toFixed(2) : '待定'}</td>
+                    <td class="py-3 px-4 sm:px-6 text-sm text-gray-900">${item.quantity}</td>
+                    <td class="py-3 px-4 sm:px-6 text-sm font-bold text-blue-600">¥${typeof item.totalPrice === 'number' ? item.totalPrice.toFixed(2) : '待定'}</td>
+                    <td class="py-3 px-4 sm:px-6 text-sm text-blue-500 hover:text-blue-700 transition-colors duration-200">
+                        <a href="${item.link}" target="_blank" class="hover:underline">${item.link.includes('http') ? '前往购买' : item.link}</a>
+                    </td>
+                    <td class="py-3 px-4 sm:px-6 text-sm text-gray-700 space-x-2 flex">
+                        <button class="icon-btn" onclick="moveItem(${item.originalIndex}, 'up')">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500 hover:text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                        <button class="icon-btn" onclick="moveItem(${item.originalIndex}, 'down')">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500 hover:text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                        <button class="icon-btn" onclick="editItem(${item.originalIndex})">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500 hover:text-yellow-500" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M13.586 3.586a2 2 0 112.828 2.828l-7.586 7.586A.5.5 0 019.164 14H6a.5.5 0 01-.5-.5v-3.164a.5.5 0 01.146-.354l7.586-7.586zM15 5l-7.586 7.586-1.954-1.954 7.586-7.586L15 5z" />
+                                <path d="M5.5 13.5a.5.5 0 01-.5.5H3a.5.5 0 01-.5-.5v-10a.5.5 0 01.5-.5H5.5a.5.5 0 01.5.5v10a.5.5 0 01-.5.5z" />
+                            </svg>
+                        </button>
+                        <button class="icon-btn" onclick="showDeleteConfirm(${item.originalIndex})">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500 hover:text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M9 2a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1zm0 4a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1zM4 9a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </td>
+                `;
+                bomBody.appendChild(row);
+            });
+
+            // Append a total row
+            const totalRow = document.createElement('tr');
+            totalRow.className = 'bg-gray-100 font-bold';
+            totalRow.innerHTML = `
+                <td class="py-3 px-4 sm:px-6 text-sm text-gray-900" colspan="5">总计</td>
+                <td class="py-3 px-4 sm:px-6 text-sm text-blue-600">¥${totalOverallPrice.toFixed(2)}</td>
+                <td class="py-3 px-4 sm:px-6 text-sm"></td>
+                <td class="py-3 px-4 sm:px-6 text-sm"></td>
+            `;
+            bomBody.appendChild(totalRow);
+        }
+        
+        // 排序功能
+        window.sortTable = (key) => {
+            if (currentSortKey === key) {
+                isAscending = !isAscending;
+            } else {
+                currentSortKey = key;
+                isAscending = true;
+            }
+
+            document.querySelectorAll('.sort-icon').forEach(icon => {
+                icon.classList.remove('active');
+            });
+            document.querySelectorAll(`.sort-icon.${isAscending ? 'ascending' : 'descending'}`).forEach(icon => {
+                if (icon.closest('th').querySelector('span').innerText.includes(key === 'unitPrice' ? '单价' : key === 'quantity' ? '数量' : key === 'totalPrice' ? '总价' : '序号')) {
+                    icon.classList.add('active');
+                }
+            });
+            
+            renderBomList();
+        };
+
+        // 添加新项目 - 打开弹窗
+        window.showAddModal = () => {
+            isAdding = true;
+            modalTitle.innerText = "添加新项目";
+            editForm.reset();
+            editModal.classList.remove('hidden');
+            editModal.classList.add('flex');
+        };
+
+        // 上移/下移功能
+        window.moveItem = (index, direction) => {
+            if (direction === 'up' && index > 0) {
+                [bomItems[index - 1], bomItems[index]] = [bomItems[index], bomItems[index - 1]];
+            } else if (direction === 'down' && index < bomItems.length - 1) {
+                [bomItems[index + 1], bomItems[index]] = [bomItems[index], bomItems[index + 1]];
+            }
+            renderBomList();
+        };
+
+        // 删除功能 - 显示确认弹窗
+        window.showDeleteConfirm = (index) => {
+            currentEditIndex = index;
+            confirmModal.classList.remove('hidden');
+            confirmModal.classList.add('flex');
+        };
+
+        // 删除功能 - 确认删除
+        confirmDeleteBtn.addEventListener('click', () => {
+            if (currentEditIndex !== null) {
+                bomItems.splice(currentEditIndex, 1);
+                renderBomList();
+                confirmModal.classList.add('hidden');
+                confirmModal.classList.remove('flex');
+            }
+        });
+
+        // 删除功能 - 取消删除
+        cancelDeleteBtn.addEventListener('click', () => {
+            confirmModal.classList.add('hidden');
+            confirmModal.classList.remove('flex');
+        });
+
+        // 编辑功能 - 打开弹窗
+        window.editItem = (index) => {
+            isAdding = false;
+            currentEditIndex = index;
+            modalTitle.innerText = "编辑项目";
+            const item = bomItems[index];
+            document.getElementById('edit-name').value = item.name;
+            document.getElementById('edit-parameters').value = item.parameters.replace(/<[^>]*>?/g, ''); // Remove span tags for editing
+            document.getElementById('edit-unit-price').value = item.unitPrice;
+            document.getElementById('edit-quantity').value = item.quantity;
+            document.getElementById('edit-link').value = item.link;
+            editModal.classList.remove('hidden');
+            editModal.classList.add('flex');
+        };
+
+        // 编辑/添加功能 - 保存
+        editForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const newLink = document.getElementById('edit-link').value.trim();
+            const updatedLink = newLink.startsWith('http://') || newLink.startsWith('https://') ? newLink : `https://${newLink}`;
+            
+            const newItem = {
+                name: document.getElementById('edit-name').value,
+                parameters: document.getElementById('edit-parameters').value,
+                unitPrice: parseFloat(document.getElementById('edit-unit-price').value),
+                quantity: parseInt(document.getElementById('edit-quantity').value, 10),
+                link: updatedLink
+            };
+            
+            if (isNaN(newItem.unitPrice) || isNaN(newItem.quantity)) {
+                const messageBox = document.createElement('div');
+                messageBox.className = 'fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50';
+                messageBox.innerHTML = `
+                    <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm text-center">
+                        <h2 class="text-xl font-bold mb-4">输入错误</h2>
+                        <p class="mb-6 text-gray-700">单价和数量必须是有效的数字。</p>
+                        <button class="bg-blue-500 text-white font-bold py-2 px-4 rounded-full hover:bg-blue-600" onclick="this.parentNode.parentNode.remove()">确定</button>
+                    </div>
+                `;
+                document.body.appendChild(messageBox);
+                return;
+            }
+            
+            if (isAdding) {
+                bomItems.push(newItem);
+            } else {
+                bomItems[currentEditIndex] = newItem;
+            }
+
+            renderBomList();
+            editModal.classList.add('hidden');
+            editModal.classList.remove('flex');
+        });
+
+        // 取消编辑
+        cancelEditBtn.addEventListener('click', () => {
+            editModal.classList.add('hidden');
+            editModal.classList.remove('flex');
+        });
+        
+        // 导出为Excel
+        window.exportExcel = () => {
+            const worksheet = XLSX.utils.json_to_sheet(bomItems.map(item => {
+                const totalPrice = typeof item.unitPrice === 'number' ? (item.quantity * item.unitPrice).toFixed(2) : '待定';
+                return {
+                    "序号": bomItems.indexOf(item) + 1,
+                    "商品名称": item.name,
+                    "关键参数": item.parameters.replace(/<[^>]*>?/g, ''),
+                    "单价": typeof item.unitPrice === 'number' ? `¥${item.unitPrice.toFixed(2)}` : '待定',
+                    "数量": item.quantity,
+                    "总价": `¥${totalPrice}`,
+                    "购买链接": item.link
+                };
+            }));
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "物料清单");
+            XLSX.writeFile(workbook, "机器人物料清单.xlsx");
+        };
+
+        renderBomList();
+    });
+</script>
+
+</body>
+</html>
+
