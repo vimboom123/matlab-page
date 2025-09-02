@@ -7,6 +7,10 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Firebase (for real-time shared saving) -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -16,8 +20,12 @@
             max-width: 1000px;
         }
         .icon-btn {
-            @apply p-1 rounded-full hover:bg-gray-200 transition-colors duration-200;
+            padding: 0.25rem; /* p-1 */
+            border-radius: 9999px; /* rounded-full */
+            transition-property: background-color, color; /* transition-colors */
+            transition-duration: 200ms; /* duration-200 */
         }
+        .icon-btn:hover { background-color: #e5e7eb; /* hover:bg-gray-200 */ }
         .sort-icon {
             opacity: 0.3;
             transition: opacity 0.2s ease-in-out;
@@ -162,8 +170,8 @@
 </div>
 
 <script>
-    // 初始物料数据
-    const bomItems = [
+    // 初始物料数据（默认本地数据，用于首次填充或无云端时）
+    let DEFAULT_BOM = [
         
         {
             name: "Hailo-8 AI 处理器模块",
@@ -355,6 +363,9 @@
             link: "无美团链接"
         }
     ];
+
+    // 运行时物料数据（可能来自云端 Firestore）
+    let bomItems = [];
     
     let currentSortKey = null;
     let isAscending = true;
@@ -365,6 +376,8 @@
     let editForm = null;
     let editModal = null;
     let modalTitle = null;
+    let useCloud = false; // 是否启用云端实时保存
+    let db = null;       // Firestore 句柄
 
     document.addEventListener('DOMContentLoaded', () => {
         const bomBody = document.getElementById('bom-body');
@@ -375,6 +388,53 @@
         cancelDeleteBtn = document.getElementById('cancel-delete-btn');
         confirmDeleteBtn = document.getElementById('confirm-delete-btn');
         modalTitle = document.getElementById('modal-title');
+
+        // 1) 初始化 Firebase（需要你把下方配置替换成自己的项目配置）
+        //   获取路径：Firebase 控制台 → 项目设置 → 常规 → 你的应用（Web）→ 复制配置
+        const FIREBASE_CONFIG = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            // 其余可选：storageBucket, messagingSenderId, appId
+        };
+        try {
+            if (FIREBASE_CONFIG.projectId && FIREBASE_CONFIG.projectId !== 'YOUR_PROJECT_ID') {
+                firebase.initializeApp(FIREBASE_CONFIG);
+                // 匿名登录（便于公开写入，但注意安全）
+                firebase.auth().signInAnonymously().catch(console.error);
+                db = firebase.firestore();
+                useCloud = true;
+            }
+        } catch (e) {
+            console.warn('Firebase 初始化失败，回退到本地数据', e);
+        }
+
+        // 2) 订阅/加载数据
+        function subscribeBom() {
+            if (!useCloud) {
+                // 无云端时，直接用默认数据
+                bomItems = DEFAULT_BOM.map((it) => ({...it}));
+                renderBomList();
+                return;
+            }
+            db.collection('bomItems').orderBy('order', 'asc').onSnapshot((snapshot) => {
+                bomItems = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                renderBomList();
+            });
+        }
+
+        async function seedIfEmpty() {
+            if (!useCloud) return;
+            const snap = await db.collection('bomItems').limit(1).get();
+            if (snap.empty) {
+                const batch = db.batch();
+                DEFAULT_BOM.forEach((it, idx) => {
+                    const ref = db.collection('bomItems').doc();
+                    batch.set(ref, { ...it, order: idx });
+                });
+                await batch.commit();
+            }
+        }
         
         // 渲染物料清单
         function renderBomList() {
@@ -489,13 +549,25 @@
         };
 
         // 上移/下移功能
-        window.moveItem = (index, direction) => {
-            if (direction === 'up' && index > 0) {
-                [bomItems[index - 1], bomItems[index]] = [bomItems[index], bomItems[index - 1]];
-            } else if (direction === 'down' && index < bomItems.length - 1) {
-                [bomItems[index + 1], bomItems[index]] = [bomItems[index], bomItems[index + 1]];
+        window.moveItem = async (index, direction) => {
+            if (!useCloud) {
+                if (direction === 'up' && index > 0) {
+                    [bomItems[index - 1], bomItems[index]] = [bomItems[index], bomItems[index - 1]];
+                } else if (direction === 'down' && index < bomItems.length - 1) {
+                    [bomItems[index + 1], bomItems[index]] = [bomItems[index], bomItems[index + 1]];
+                }
+                renderBomList();
+                return;
             }
-            renderBomList();
+
+            const swapWith = direction === 'up' ? index - 1 : index + 1;
+            if (swapWith < 0 || swapWith >= bomItems.length) return;
+            const cur = bomItems[index];
+            const target = bomItems[swapWith];
+            const batch = db.batch();
+            batch.update(db.collection('bomItems').doc(cur.id), { order: target.order });
+            batch.update(db.collection('bomItems').doc(target.id), { order: cur.order });
+            await batch.commit();
         };
 
         // 删除功能 - 显示确认弹窗
@@ -506,10 +578,15 @@
         };
 
         // 删除功能 - 确认删除
-        confirmDeleteBtn.addEventListener('click', () => {
+        confirmDeleteBtn.addEventListener('click', async () => {
             if (currentEditIndex !== null) {
-                bomItems.splice(currentEditIndex, 1);
-                renderBomList();
+                if (useCloud) {
+                    const id = bomItems[currentEditIndex].id;
+                    await db.collection('bomItems').doc(id).delete();
+                } else {
+                    bomItems.splice(currentEditIndex, 1);
+                    renderBomList();
+                }
                 confirmModal.classList.add('hidden');
                 confirmModal.classList.remove('flex');
             }
@@ -537,7 +614,7 @@
         };
 
         // 编辑/添加功能 - 保存
-        editForm.addEventListener('submit', (e) => {
+        editForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const newLink = document.getElementById('edit-link').value.trim();
             const updatedLink = newLink.startsWith('http://') || newLink.startsWith('https://') ? newLink : `https://${newLink}`;
@@ -565,12 +642,23 @@
             }
             
             if (isAdding) {
-                bomItems.push(newItem);
+                if (useCloud) {
+                    const order = bomItems.length ? ((bomItems[bomItems.length - 1].order ?? bomItems.length - 1) + 1) : 0;
+                    await db.collection('bomItems').add({ ...newItem, order });
+                } else {
+                    bomItems.push(newItem);
+                    renderBomList();
+                }
             } else {
-                bomItems[currentEditIndex] = newItem;
+                if (useCloud) {
+                    const id = bomItems[currentEditIndex].id;
+                    await db.collection('bomItems').doc(id).update(newItem);
+                } else {
+                    bomItems[currentEditIndex] = newItem;
+                    renderBomList();
+                }
             }
 
-            renderBomList();
             editModal.classList.add('hidden');
             editModal.classList.remove('flex');
         });
@@ -600,7 +688,12 @@
             XLSX.writeFile(workbook, "机器人物料清单.xlsx");
         };
 
-        renderBomList();
+        // 启动：若使用云端，先尝试首填充（空库时），然后订阅；否则直接加载默认数据
+        if (useCloud) {
+            seedIfEmpty().then(subscribeBom);
+        } else {
+            subscribeBom();
+        }
     });
 </script>
 
